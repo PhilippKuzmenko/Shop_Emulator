@@ -1,72 +1,89 @@
 ﻿using UnityEngine;
-using System.Collections;
+using UnityEngine.AI;
 
 public enum BuyerStay
 {
     ChangeProducts,
-    ChangeCashBox,
     GoToCashBox,
     GoToHome
 }
 [RequireComponent(typeof(NavMeshAgent))]
 public class Human : MonoBehaviour
 {
-    public float Products = 10.0f;
-    public float TimeToChange = 10.0f;
+    public static float BuyPointSwithTime = 30f;
+    public float Products;
+    public float ChangeTime;
+
+    private float startSpeed;
+    private float startAngularSpeed;
 
     private Shop shop;
-    private NavMeshAgent NavMeshAg;
-    private Transform BuyPoint;
-    private CashBox ChangedCashBox;
-    private BuyerStay Stay = BuyerStay.ChangeProducts;
+    private NavMeshAgent agent;
     
+    private float BuyPointSwithTimeout = BuyPointSwithTime;
+    private Vector3 BuyPointPosition;
+    private CashBox ChangedCashBox;
+    private Vector3 HomePosition;
+    private BuyerStay Stay = BuyerStay.ChangeProducts;
+
+    private bool WasInCashBox = false;
+    
+    public void Initialize(int ProductCount, float changeTime)
+    {
+        Products = ProductCount;
+        ChangeTime = changeTime;
+    }
     void Start()
     {
         shop = FindObjectOfType<Shop>().GetComponent<Shop>();
-        NavMeshAg = GetComponent<NavMeshAgent>();
-        //
+        agent = GetComponent<NavMeshAgent>();
+        startSpeed = agent.speed;
+        startAngularSpeed = agent.angularSpeed;
         GoToBuyPoint();
     }
     void Update()
     {
-        if(GetTargetComplated(2f) && Stay == BuyerStay.ChangeProducts)
-        {
-            if (TimeToChange > 0f)
+        agent.speed = startSpeed * shop.GetTimeScale();
+        agent.angularSpeed = startAngularSpeed * shop.GetTimeScale();
+        if (GetTargetComplated(2f, BuyPointPosition) && Stay == BuyerStay.ChangeProducts)
+        { 
+            if (ChangeTime < 0f)
             {
-                TimeToChange -= Time.deltaTime;
-            } else
-            {
-                Stay = BuyerStay.ChangeCashBox;
+                ChangedCashBox = shop.GetOptimalCashBox();
+                agent.destination = ChangedCashBox.transform.position;
+                Stay = BuyerStay.GoToCashBox;
+                return;
             }
-        } else if(Stay == BuyerStay.ChangeCashBox)
-        {
-            ChangedCashBox = shop.GetOptimalCashBox();
-            NavMeshAg.destination = ChangedCashBox.transform.position; 
-            Stay = BuyerStay.GoToCashBox;
-        } else if(Stay == BuyerStay.GoToCashBox && GetTargetComplated(2f))
+            if(BuyPointSwithTimeout < 0f)
+            {
+                GoToBuyPoint();
+                BuyPointSwithTimeout = BuyPointSwithTime;
+            }
+            ChangeTime -= Time.deltaTime * shop.GetTimeScale();
+            BuyPointSwithTimeout -= Time.deltaTime * shop.GetTimeScale();
+        } else if(Stay == BuyerStay.GoToCashBox && !WasInCashBox && GetTargetComplated(2f, ChangedCashBox.transform.position))
         {
             ChangedCashBox.Queue.Add(this);
-        } else if(Stay == BuyerStay.GoToHome)
+            WasInCashBox = true;
+        } else if(Stay == BuyerStay.GoToHome && GetTargetComplated(2f, HomePosition))
         {
-            NavMeshAg.destination = shop.ExitPoint.position;
-            if(GetTargetComplated(2f))
-            {
-                Destroy(gameObject);
-            }
+            Destroy(gameObject);
         }
     }
 
-    public bool GetTargetComplated(float ComplateDistance)
+    public bool GetTargetComplated(float ComplateDistance, Vector3 Target)
     {
-        return NavMeshAg.remainingDistance <= ComplateDistance;
+        return (Vector3.Distance(transform.position, Target) <= ComplateDistance) && (agent.remainingDistance <= ComplateDistance) && Vector3.Distance(agent.destination, Target) < 1.5f;
     }
     public void GoToHome()
     {
+        HomePosition = shop.ExitPoint.position;
+        agent.destination = HomePosition;
         Stay = BuyerStay.GoToHome;
     }
     void GoToBuyPoint()
     {
-        BuyPoint = shop.GetRandomBuyPoint();
-        NavMeshAg.destination = BuyPoint.position;
+        BuyPointPosition = shop.GetRandomBuyPoint();
+        agent.destination = BuyPointPosition;
     }
 }
